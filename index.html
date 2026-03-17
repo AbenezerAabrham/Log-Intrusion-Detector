@@ -1,0 +1,199 @@
+<!-- LogWatch | Author: Abenezer | MIT License | 2026 -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogWatch — Automated Log Intrusion Detector</title>
+  <meta name="description"
+    content="Instantly analyze server logs for brute-force attacks, SQL injection, XSS, and more. LogWatch uses pattern matching and heuristic analysis to score logs for risk." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- Animated background grid -->
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="app-wrapper">
+
+    <!-- header -->
+    <header class="header">
+      <div class="logo-mark">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="18" cy="18" r="17" stroke="url(#logoGrad)" stroke-width="2" />
+          <path d="M12 18 C15 15, 21 15, 24 18 C21 21, 15 21, 12 18 Z" stroke="#fff" stroke-width="2" fill="none" />
+          <circle cx="18" cy="18" r="2.5" fill="url(#coreGrad)" />
+          <defs>
+            <linearGradient id="logoGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#f59e0b" />
+              <stop offset="1" stop-color="#ef4444" />
+            </linearGradient>
+            <linearGradient id="coreGrad" x1="15" y1="15" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#f59e0b" />
+              <stop offset="1" stop-color="#ef4444" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="logo-text">LogWatch</span>
+      </div>
+      <div class="header-badge">
+        <span class="pulse-dot"></span>
+        <span>Live Monitoring</span>
+      </div>
+    </header>
+
+    <!-- hero -->
+    <section class="hero">
+      <h1 class="hero-title">
+        Detect Server Attacks<br />
+        <span class="gradient-text">Hidden in Your Logs</span>
+      </h1>
+      <p class="hero-sub">
+        SOC-grade heuristic analysis for brute-force attempts, SQL injections,<br />
+        directory traversal, malicious payloads, and more.
+      </p>
+    </section>
+
+    <!-- Log input -->
+    <div class="input-card glass">
+      <div class="textarea-wrapper" id="inputWrapper">
+        <textarea id="logInput" class="log-textarea"
+          placeholder="Paste raw server logs here...&#10;e.g.&#10;192.168.1.50 - [17/Mar/2026:14:32:01 +0000] &quot;GET /etc/passwd HTTP/1.1&quot; 403 212"
+          autocomplete="off" spellcheck="false"></textarea>
+        <button id="clearBtn" class="clear-btn" title="Clear logs" aria-label="Clear input" style="display:none">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round">
+            <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+          </svg>
+        </button>
+      </div>
+      <button id="analyzeBtn" class="analyze-btn">
+        <span class="btn-text">Scan Logs</span>
+        <span class="btn-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <path d="M12 8v4l3 3" />
+          </svg>
+        </span>
+        <span class="btn-loader" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <!-- example chips -->
+    <div class="quick-examples">
+      <span class="examples-label">Try a sample log:</span>
+      <button class="example-chip danger" data-type="brute">SSH Brute Force</button>
+      <button class="example-chip danger" data-type="sqli">SQLi & Dir Traversal</button>
+      <button class="example-chip caution" data-type="scan">Port Scan (404s)</button>
+      <button class="example-chip safe" data-type="clean">Clean Traffic</button>
+    </div>
+
+    <!-- results -->
+    <div id="resultsPanel" class="results-panel hidden">
+
+      <!-- log summary breakdown -->
+      <div class="url-breakdown glass" id="logSummary"></div>
+
+      <!-- score + verdict -->
+      <div class="verdict-row">
+        <div class="score-ring-container">
+          <svg class="score-ring" viewBox="0 0 120 120" width="120" height="120">
+            <circle class="ring-bg" cx="60" cy="60" r="52" />
+            <circle class="ring-fill" cx="60" cy="60" r="52" id="ringFill" />
+          </svg>
+          <div class="score-center">
+            <span id="scoreNum" class="score-num">0</span>
+            <span class="score-label">/ 100</span>
+          </div>
+        </div>
+
+        <div class="verdict-info">
+          <div id="verdictBadge" class="verdict-badge"></div>
+          <p id="verdictDesc" class="verdict-desc"></p>
+          <div class="threat-meter">
+            <div class="threat-meter-label">Threat Level</div>
+            <div class="threat-bar-track">
+              <div class="threat-bar-fill" id="threatBarFill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- findings cards -->
+      <div class="findings-grid" id="findingsGrid"></div>
+
+      <!-- indicator table (now an events table) -->
+      <div class="detail-section glass" id="eventTableSection" style="display: none;">
+        <h3 class="detail-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          Flagged Events Log
+        </h3>
+        <div class="table-wrapper">
+          <div id="eventTable" class="event-table"></div>
+        </div>
+      </div>
+
+      <!-- recommendation -->
+      <div id="recommendation" class="recommendation-box glass"></div>
+
+      <!-- reset -->
+      <button class="reset-btn" id="resetBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+        </svg>
+        Scan Another Log
+      </button>
+    </div>
+
+    <!-- stats bar -->
+    <div class="stats-bar glass">
+      <div class="stat-item">
+        <span class="stat-num">9+</span>
+        <span class="stat-label">Attack Signatures</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-num">Heuristic</span>
+        <span class="stat-label">Analysis Engine</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-num">Regex-v2</span>
+        <span class="stat-label">Pattern Matching</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-num">0</span>
+        <span class="stat-label">Data Collected</span>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <p>LogWatch processes all logs locally — no data leaves your browser. SOC teams use similar tools for
+        first-level triage.</p>
+    </footer>
+
+  </div>
+
+  <script src="detector.js"></script>
+</body>
+
+</html>
