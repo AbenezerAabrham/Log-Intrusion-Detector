@@ -1,31 +1,101 @@
-# LogWatch 🕵️‍♂️ (Automated Log Intrusion Detector)
+# LogWatch — Automated Log Intrusion Detector 🛡️
 
-*A browser-based, instant log analyzer for spotting server attacks. No servers to spin up, no data leaves your browser.*
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Status: Active](https://img.shields.io/badge/Status-Active-success.svg)]()
+[![Cybersecurity](https://img.shields.io/badge/Domain-Cybersecurity-red.svg)]()
+[![SIEM](https://img.shields.io/badge/Tool-Log_Analysis-orange.svg)]()
 
-## Why does this exist?
-If you've ever stared at raw server logs (like an Nginx access log or an `auth.log`), you know it's a nightmare. Servers generate massive amounts of noise, and trying to spot a hacker poking around inside thousands of lines of normal web traffic is like finding a needle in a haystack. 
+**LogWatch** is a next-generation, client-side, automated server log intrusion detector and threat hunting tool. Designed for SOC analysts, system administrators, and cybersecurity enthusiasts, LogWatch instantly analyzes raw server logs for malicious activities such as brute-force attacks, SQL injection (SQLi), Cross-Site Scripting (XSS), directory traversal, and more. 
 
-SOC (Security Operations Center) teams deal with this daily. They use automated tools to flag suspicious behavior. **LogWatch** is a lightweight, frontend-only version of those tools. It gives you instant, visual threat intel just by pasting your logs.
+> **Google Search Keywords**: Log Intrusion Detection, Automated Log Analysis, Web Server Security, Apache/Nginx Log Analyzer, Identify Server Attacks, SOC Triage Tool, Cyber Threat Hunting, Heuristic log analysis.
 
-## What it actually does
-LogWatch scans raw text logs and uses pattern matching and time-window heuristics to catch the bad guys. It flags things like:
+---
 
-- **Brute-Force Attacks:** Someone trying to guess passwords from the same IP, resulting in multiple 401/403 errors.
-- **Directory Busting / Port Scans:** Script kiddies blindly fishing for hidden `/admin` pages or `.env` files, resulting in a spike of 404 errors.
-- **SQL Injections (SQLi):** Database manipulation payloads embedded in URLs (like `' OR 1=1`).
-- **Path Traversal:** Attempts to break out of the web directory to read system files (like `../../../etc/passwd`).
-- **Cross-Site Scripting (XSS):** Malicious JavaScript payloads attempting to execute in the browser.
-- **Suspicious User-Agents:** Traffic coming from known hacking tools or vulnerability scanners (like `sqlmap`, `nikto`, or `masscan`).
+## ✨ Features
 
-## How to use it
-It's just an HTML file! 
+- **🚀 Instant Client-Side Analysis**: All processing happens locally in your browser. No data ever leaves your device, ensuring maximum privacy and compliance.
+- **🧠 Heuristic Threat Engine**: Uses advanced pattern matching to not just find exact signatures, but anomalous patterns representing novel attack vectors.
+- **🎯 Highly Accurate Threat Scoring**: Calculates a definitive Risk Score (0-100) based on severity, frequency, and correlation of suspicious events.
+- **📊 SOC-Grade Verdicts**: Gives immediate, actionable feedback on the threat level (Clean, Suspicious, Critical) and provides specific remediation recommendations.
+- **🔍 Granular Finding Cards**: Breaks down specifically what was found (e.g., *SSH Brute Force Detected*, *SQLi Attempt*).
+- **📝 Comprehensive Event Table**: See every single flagged event in a structured tabular format for deep-dive investigations.
+- **🎨 Premium Dark UI**: Features a modern, responsive, "glassmorphism" dark theme with a beautifully crafted dashboard experience.
 
-1. Open `index.html` in your favorite browser.
-2. Paste your raw server access logs into the text area.
-3. Click "Scan Logs" and watch the engine parse the noise into a clean, actionable threat report. 
-4. Don't have any logs on hand? Click the built-in sample chips at the top to see how it handles simulated SSH brute-force attacks or SQL injections.
+---
 
-## The Tech Stack
-- **100% Client-Side:** Built heavily with plain HTML, modern CSS, and vanilla JavaScript mapping logic. 
-- **Privacy First:** Since it's entirely frontend logic, your sensitive server logs are processed locally in your DOM. Absolutely zero data is sent to a backend API or saved anywhere.
-- **Design:** Features a modern, dark-mode glassmorphism aesthetic because security tools don't have to look like they were built in 1998.
+## 🛠️ Installation & Setup
+
+Because LogWatch is completely client-side, there are no dependencies to install or backend servers to spin up!
+
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/YourUsername/log-intrusion-detector.git
+   ```
+2. **Navigate to the Directory**:
+   ```bash
+   cd log-intrusion-detector
+   ```
+3. **Run the Application**:
+   Simply open `index.html` in your favorite modern web browser.
+   ```bash
+   # On macOS
+   open index.html
+
+   # On Linux
+   xdg-open index.html
+
+   # On Windows
+   start index.html
+   ```
+
+---
+
+## 💻 How to Use
+
+1. **Open the Tool**: Launch `index.html` in your browser.
+2. **Input Logs**: Paste your raw server logs (Apache, Nginx, SSH, auth.log, etc.) directly into the text area.
+3. **Scan**: Click the **Scan Logs** button.
+4. **Review Results**:
+   - Check the **Score Ring** and **Verdict** for an immediate high-level overview.
+   - Review the **Findings Grid** for categorized attack attempts.
+   - Inspect the **Flagged Events Log** for pinpointing exact log lines that triggered the alerts.
+   - Follow the **Mitigation Recommendations** to secure your infrastructure.
+
+---
+
+## 🧠 What Does LogWatch Detect?
+
+LogWatch comes pre-built with detection signatures and heuristics for:
+- **Brute Force Attacks (SSH, FTP, Web Login)**: High failure rates from single IPs.
+- **SQL Injection (SQLi)**: Payloads containing `UNION`, `SELECT`, `OR 1=1`, and encoded SQL variants.
+- **Cross-Site Scripting (XSS)**: Script tags, `onerror`, and encoded alert payloads.
+- **Directory Traversal**: Attempts to access `/etc/passwd`, `C:\Windows`, or `../../` patterns.
+- **Command Injection**: Appended commands using `;`, `|`, or `&&`.
+- **Malicious Bots & Scanners**: Nmap, Nikto, DirBuster, and unknown automated user agents.
+- **Port Scans / Enumeration**: Excessive `404 Not Found` requests from a single source.
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page]().
+
+1. **Fork** the project.
+2. Create your **Feature Branch** (`git checkout -b feature/AmazingFeature`).
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
+4. **Push** to the branch (`git push origin feature/AmazingFeature`).
+5. Open a **Pull Request**.
+
+---
+
+## 🛡️ Security
+
+This tool does not collect telemetry, analytics, or log data. It operates 100% offline in your browser. If you find a security vulnerability within the tool itself, please report it privately.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+> *Created with ❤️ by Abenezer. Defend your networks.*
