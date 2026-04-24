@@ -1,5 +1,5 @@
 # LogWatch — Automated Log Intrusion Detector 🛡️
-Live Demo : https://log-intrusion-detector-iota.vercel.app/
+Link live interactive environment : https://log-intrusion-detector-iota.vercel.app/
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Status: Active](https://img.shields.io/badge/Status-Active-success.svg)]()
 [![Cybersecurity](https://img.shields.io/badge/Domain-Cybersecurity-red.svg)]()
