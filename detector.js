@@ -83,18 +83,28 @@ function analyzeLogs(rawText) {
     return { valid: false, error: 'Log input is empty. Please paste logs first.' };
   }
 
-  const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+  // BOLT OPTIMIZATION: Avoid intermediate array creation from filtering
+  const lines = rawText.split('\n');
   const events = [];
   const findingsMap = new Map();
   const ipStats = {};
 
   let riskTotal = 0;
+  let flaggedLinesCount = 0;
 
   // regex to roughly extract IP and HTTP Status from common access logs
   const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
   const statusRegex = /\s([2345]\d{2})\s/;
 
-  lines.forEach((line, index) => {
+  // BOLT OPTIMIZATION: Hoist PATTERNS entries outside the loop
+  const patternEntries = Object.entries(PATTERNS);
+  const patternLen = patternEntries.length;
+
+  // BOLT OPTIMIZATION: Use standard for-loop for hot path processing
+  for (let i = 0, len = lines.length; i < len; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+
     let lineType = 'safe'; // default
     let highestLineScore = 0;
     const flaggedReasons = [];
@@ -108,23 +118,26 @@ function analyzeLogs(rawText) {
     if (!ipStats[ip]) {
       ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
     }
-    ipStats[ip].count++;
-    if (status === 401) ipStats[ip][401]++;
-    if (status === 403) ipStats[ip][403]++;
-    if (status === 404) ipStats[ip][404]++;
-    if (status >= 500) ipStats[ip][500]++;
+    const stats = ipStats[ip];
+    stats.count++;
+    if (status === 401) stats[401]++;
+    else if (status === 403) stats[403]++;
+    else if (status === 404) stats[404]++;
+    else if (status >= 500) stats[500]++;
 
     // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    for (let j = 0; j < patternLen; j++) {
+      const [key, rule] = patternEntries[j];
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
         // Ensure finding appears only once in summary
-        if (!findingsMap.has(key)) {
+        let finding = findingsMap.get(key);
+        if (!finding) {
           findingsMap.set(key, { ...rule, occurrence: 1 });
           riskTotal += rule.score; // only add score once per pattern type for overall log
         } else {
-          findingsMap.get(key).occurrence++;
+          finding.occurrence++;
         }
 
         // track severity
@@ -134,19 +147,20 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
+      flaggedLinesCount++;
       events.push({
-        lineNum: index + 1,
+        lineNum: i + 1,
         ip,
         content: line,
         severity: lineType,
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
   // Heuristics 2: IP Aggregation checks
   Object.entries(ipStats).forEach(([ip, stats]) => {
@@ -213,7 +227,7 @@ function analyzeLogs(rawText) {
     findings,
     summary: {
       totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
+      flaggedLines: flaggedLinesCount,
       uniqueIps
     }
   };
