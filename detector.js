@@ -83,7 +83,9 @@ function analyzeLogs(rawText) {
     return { valid: false, error: 'Log input is empty. Please paste logs first.' };
   }
 
-  const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+  // OPTIMIZATION: Avoid pre-filtering to save one full pass and an intermediate array.
+  // We process all lines in a single loop and skip empty ones inline.
+  const lines = rawText.split('\n');
   const events = [];
   const findingsMap = new Map();
   const ipStats = {};
@@ -94,7 +96,30 @@ function analyzeLogs(rawText) {
   const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
   const statusRegex = /\s([2345]\d{2})\s/;
 
-  lines.forEach((line, index) => {
+  // OPTIMIZATION: Hoist patterns to avoid Object.entries() overhead inside the hot loop.
+  // We also pre-calculate severity values to avoid repeated ternary evaluations.
+  const patternList = Object.entries(PATTERNS).map(([key, rule]) => ({
+    key,
+    regex: rule.regex,
+    name: rule.name,
+    type: rule.type,
+    score: rule.score,
+    desc: rule.desc,
+    severityValue: rule.type === 'critical' ? 3 : rule.type === 'high' ? 2 : 1
+  }));
+  const patternCount = patternList.length;
+
+  let validLinesCount = 0;
+  let flaggedLinesCount = 0;
+
+  // OPTIMIZATION: Use a standard for loop for better performance on large datasets.
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Skip empty lines inline
+    if (line.length === 0 || !line.trim()) continue;
+    validLinesCount++;
+
     let lineType = 'safe'; // default
     let highestLineScore = 0;
     const flaggedReasons = [];
@@ -105,56 +130,69 @@ function analyzeLogs(rawText) {
     const statusMatch = line.match(statusRegex);
     const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
-    if (!ipStats[ip]) {
-      ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
+    let stats = ipStats[ip];
+    if (!stats) {
+      stats = ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
     }
-    ipStats[ip].count++;
-    if (status === 401) ipStats[ip][401]++;
-    if (status === 403) ipStats[ip][403]++;
-    if (status === 404) ipStats[ip][404]++;
-    if (status >= 500) ipStats[ip][500]++;
+    stats.count++;
+    if (status === 401) stats[401]++;
+    else if (status === 403) stats[403]++;
+    else if (status === 404) stats[404]++;
+    else if (status >= 500) stats[500]++;
 
     // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    for (let j = 0; j < patternCount; j++) {
+      const rule = patternList[j];
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
         // Ensure finding appears only once in summary
-        if (!findingsMap.has(key)) {
-          findingsMap.set(key, { ...rule, occurrence: 1 });
+        const existingFinding = findingsMap.get(rule.key);
+        if (!existingFinding) {
+          findingsMap.set(rule.key, {
+            regex: rule.regex,
+            name: rule.name,
+            type: rule.type,
+            score: rule.score,
+            desc: rule.desc,
+            occurrence: 1
+          });
           riskTotal += rule.score; // only add score once per pattern type for overall log
         } else {
-          findingsMap.get(key).occurrence++;
+          existingFinding.occurrence++;
         }
 
         // track severity
-        const lineVal = rule.type === 'critical' ? 3 : rule.type === 'high' ? 2 : 1;
-        if (lineVal > highestLineScore) {
-          highestLineScore = lineVal;
+        if (rule.severityValue > highestLineScore) {
+          highestLineScore = rule.severityValue;
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
+      flaggedLinesCount++;
       events.push({
-        lineNum: index + 1,
+        lineNum: validLinesCount,
         ip,
         content: line,
         severity: lineType,
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
   // Heuristics 2: IP Aggregation checks
-  Object.entries(ipStats).forEach(([ip, stats]) => {
+  const ipEntries = Object.entries(ipStats);
+  for (let i = 0; i < ipEntries.length; i++) {
+    const [ip, stats] = ipEntries[i];
     // Brute Force: 4+ Auth failures (401/403)
     const fails = stats[401] + stats[403];
     if (fails >= 4) {
-      if (!findingsMap.has('brute_' + ip)) {
-        findingsMap.set('brute_' + ip, {
+      const bruteKey = 'brute_' + ip;
+      if (!findingsMap.has(bruteKey)) {
+        findingsMap.set(bruteKey, {
           name: 'Authentication Brute Force',
           type: 'critical',
           score: 50,
@@ -173,8 +211,9 @@ function analyzeLogs(rawText) {
 
     // Port Scan / Dir Busting: 6+ 404s
     if (stats[404] >= 6) {
-      if (!findingsMap.has('scan_' + ip)) {
-        findingsMap.set('scan_' + ip, {
+      const scanKey = 'scan_' + ip;
+      if (!findingsMap.has(scanKey)) {
+        findingsMap.set(scanKey, {
           name: 'Directory Busting / Scanning',
           type: 'high',
           score: 30,
@@ -190,7 +229,7 @@ function analyzeLogs(rawText) {
         reasons: 'Scanner Behavior'
       });
     }
-  });
+  }
 
   // Determine overall severity
   const score = Math.min(100, Math.round(riskTotal));
@@ -203,7 +242,7 @@ function analyzeLogs(rawText) {
 
   // Format final returns
   const findings = Array.from(findingsMap.values());
-  const uniqueIps = Object.keys(ipStats).length;
+  const uniqueIps = ipEntries.length;
 
   return {
     valid: true,
@@ -212,8 +251,8 @@ function analyzeLogs(rawText) {
     events,
     findings,
     summary: {
-      totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
+      totalLines: validLinesCount,
+      flaggedLines: flaggedLinesCount,
       uniqueIps
     }
   };
