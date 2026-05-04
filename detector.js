@@ -46,6 +46,10 @@ const PATTERNS = {
   }
 };
 
+const PATTERN_ENTRIES = Object.entries(PATTERNS);
+const IP_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const STATUS_REGEX = /\s([2345]\d{2})\s/;
+
 /* --- SAMPLE LOGS --- */
 const SAMPLES = {
   brute: `192.168.1.100 - - [17/Mar/2026:10:00:01 +0000] "POST /login HTTP/1.1" 401 120 "-" "Mozilla/5.0"
@@ -89,20 +93,18 @@ function analyzeLogs(rawText) {
   const ipStats = {};
 
   let riskTotal = 0;
+  let flaggedLinesCount = 0;
 
-  // regex to roughly extract IP and HTTP Status from common access logs
-  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const statusRegex = /\s([2345]\d{2})\s/;
-
-  lines.forEach((line, index) => {
+  for (let i = 0, len = lines.length; i < len; i++) {
+    const line = lines[i];
     let lineType = 'safe'; // default
     let highestLineScore = 0;
     const flaggedReasons = [];
     
     // basic extraction
-    const ipMatch = line.match(ipRegex);
+    const ipMatch = line.match(IP_REGEX);
     const ip = ipMatch ? ipMatch[0] : 'unknown';
-    const statusMatch = line.match(statusRegex);
+    const statusMatch = line.match(STATUS_REGEX);
     const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
     if (!ipStats[ip]) {
@@ -110,21 +112,23 @@ function analyzeLogs(rawText) {
     }
     ipStats[ip].count++;
     if (status === 401) ipStats[ip][401]++;
-    if (status === 403) ipStats[ip][403]++;
-    if (status === 404) ipStats[ip][404]++;
-    if (status >= 500) ipStats[ip][500]++;
+    else if (status === 403) ipStats[ip][403]++;
+    else if (status === 404) ipStats[ip][404]++;
+    else if (status >= 500) ipStats[ip][500]++;
 
     // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    for (let j = 0, plen = PATTERN_ENTRIES.length; j < plen; j++) {
+      const [key, rule] = PATTERN_ENTRIES[j];
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
         // Ensure finding appears only once in summary
-        if (!findingsMap.has(key)) {
+        const finding = findingsMap.get(key);
+        if (!finding) {
           findingsMap.set(key, { ...rule, occurrence: 1 });
           riskTotal += rule.score; // only add score once per pattern type for overall log
         } else {
-          findingsMap.get(key).occurrence++;
+          finding.occurrence++;
         }
 
         // track severity
@@ -134,19 +138,20 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
+      flaggedLinesCount++;
       events.push({
-        lineNum: index + 1,
+        lineNum: i + 1,
         ip,
         content: line,
         severity: lineType,
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
   // Heuristics 2: IP Aggregation checks
   Object.entries(ipStats).forEach(([ip, stats]) => {
@@ -213,7 +218,7 @@ function analyzeLogs(rawText) {
     findings,
     summary: {
       totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
+      flaggedLines: flaggedLinesCount,
       uniqueIps
     }
   };
