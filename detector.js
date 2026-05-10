@@ -78,6 +78,11 @@ const SAMPLES = {
 
 // --- CORE ANALYSIS ENGINE ---
 
+// Pre-hoisted constants for performance optimization
+const PATTERN_ENTRIES = Object.entries(PATTERNS);
+const IP_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const STATUS_REGEX = /\s([2345]\d{2})\s/;
+
 function analyzeLogs(rawText) {
   if (!rawText.trim()) {
     return { valid: false, error: 'Log input is empty. Please paste logs first.' };
@@ -90,19 +95,17 @@ function analyzeLogs(rawText) {
 
   let riskTotal = 0;
 
-  // regex to roughly extract IP and HTTP Status from common access logs
-  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const statusRegex = /\s([2345]\d{2})\s/;
-
-  lines.forEach((line, index) => {
+  let flaggedLinesCount = 0;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
     let lineType = 'safe'; // default
     let highestLineScore = 0;
     const flaggedReasons = [];
     
     // basic extraction
-    const ipMatch = line.match(ipRegex);
+    const ipMatch = line.match(IP_REGEX);
     const ip = ipMatch ? ipMatch[0] : 'unknown';
-    const statusMatch = line.match(statusRegex);
+    const statusMatch = line.match(STATUS_REGEX);
     const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
     if (!ipStats[ip]) {
@@ -115,16 +118,21 @@ function analyzeLogs(rawText) {
     if (status >= 500) ipStats[ip][500]++;
 
     // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    for (let i = 0; i < PATTERN_ENTRIES.length; i++) {
+      const entry = PATTERN_ENTRIES[i];
+      const key = entry[0];
+      const rule = entry[1];
+
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
         // Ensure finding appears only once in summary
-        if (!findingsMap.has(key)) {
+        const existingFinding = findingsMap.get(key);
+        if (existingFinding === undefined) {
           findingsMap.set(key, { ...rule, occurrence: 1 });
           riskTotal += rule.score; // only add score once per pattern type for overall log
         } else {
-          findingsMap.get(key).occurrence++;
+          existingFinding.occurrence++;
         }
 
         // track severity
@@ -134,10 +142,11 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
+      flaggedLinesCount++;
       events.push({
         lineNum: index + 1,
         ip,
@@ -146,7 +155,7 @@ function analyzeLogs(rawText) {
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
   // Heuristics 2: IP Aggregation checks
   Object.entries(ipStats).forEach(([ip, stats]) => {
@@ -213,7 +222,7 @@ function analyzeLogs(rawText) {
     findings,
     summary: {
       totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
+      flaggedLines: flaggedLinesCount,
       uniqueIps
     }
   };
