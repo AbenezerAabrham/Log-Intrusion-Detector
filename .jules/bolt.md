@@ -1,0 +1,3 @@
+## 2025-05-15 - Optimizing high-volume log processing in JavaScript
+**Learning:** Standard `for` loops significantly outperform `Array.prototype.forEach` in hot paths involving large datasets (50k+ iterations). Hoisting static regexes and pre-calculating `Object.entries()` outside the main loop further reduces overhead by avoiding repeated compilation and object iteration. Additionally, maintaining a manual counter for summary statistics is much more efficient than performing a second pass with `.filter()`.
+**Action:** Always prefer `for` loops and hoist static patterns/entries when dealing with large-scale data processing in the browser or Node.js.
