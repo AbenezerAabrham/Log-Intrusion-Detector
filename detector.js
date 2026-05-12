@@ -78,53 +78,70 @@ const SAMPLES = {
 
 // --- CORE ANALYSIS ENGINE ---
 
+// Pre-hoisted constants for performance in hot paths
+const PATTERN_ENTRIES = Object.entries(PATTERNS);
+const IP_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const STATUS_REGEX = /\s([2345]\d{2})\s/;
+
 function analyzeLogs(rawText) {
   if (!rawText.trim()) {
-    return { valid: false, error: 'Log input is empty. Please paste logs first.' };
+    return { valid: false, error: 'Log input into analyzer is empty.' };
   }
 
-  const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+  // Split into lines once, avoiding multiple passes or filters
+  const lines = rawText.split('\n');
+  const totalRawLines = lines.length;
   const events = [];
   const findingsMap = new Map();
   const ipStats = {};
 
   let riskTotal = 0;
+  let flaggedLinesCount = 0;
+  let nonEmptyLinesCount = 0;
 
-  // regex to roughly extract IP and HTTP Status from common access logs
-  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const statusRegex = /\s([2345]\d{2})\s/;
+  // Single-pass optimization: use standard for-loop to avoid functional overhead and intermediate arrays
+  for (let i = 0; i < totalRawLines; i++) {
+    const line = lines[i];
+    if (!line || line.trim().length === 0) continue;
 
-  lines.forEach((line, index) => {
-    let lineType = 'safe'; // default
+    nonEmptyLinesCount++;
+
+    let lineType = 'safe';
     let highestLineScore = 0;
     const flaggedReasons = [];
     
-    // basic extraction
-    const ipMatch = line.match(ipRegex);
+    // basic extraction using hoisted regexes
+    const ipMatch = line.match(IP_REGEX);
     const ip = ipMatch ? ipMatch[0] : 'unknown';
-    const statusMatch = line.match(statusRegex);
+    const statusMatch = line.match(STATUS_REGEX);
     const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
     if (!ipStats[ip]) {
       ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
     }
-    ipStats[ip].count++;
-    if (status === 401) ipStats[ip][401]++;
-    if (status === 403) ipStats[ip][403]++;
-    if (status === 404) ipStats[ip][404]++;
-    if (status >= 500) ipStats[ip][500]++;
+    const stats = ipStats[ip];
+    stats.count++;
+    if (status === 401) stats[401]++;
+    else if (status === 403) stats[403]++;
+    else if (status === 404) stats[404]++;
+    else if (status >= 500) stats[500]++;
 
-    // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    // Regex Check: Iterating over pre-hoisted pattern entries
+    for (let j = 0; j < PATTERN_ENTRIES.length; j++) {
+      const entry = PATTERN_ENTRIES[j];
+      const key = entry[0];
+      const rule = entry[1];
+
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
         // Ensure finding appears only once in summary
-        if (!findingsMap.has(key)) {
+        const existingFinding = findingsMap.get(key);
+        if (!existingFinding) {
           findingsMap.set(key, { ...rule, occurrence: 1 });
           riskTotal += rule.score; // only add score once per pattern type for overall log
         } else {
-          findingsMap.get(key).occurrence++;
+          existingFinding.occurrence++;
         }
 
         // track severity
@@ -134,19 +151,20 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
+      flaggedLinesCount++;
       events.push({
-        lineNum: index + 1,
+        lineNum: i + 1, // Using the raw loop index for correct line numbering
         ip,
         content: line,
         severity: lineType,
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
   // Heuristics 2: IP Aggregation checks
   Object.entries(ipStats).forEach(([ip, stats]) => {
@@ -212,8 +230,8 @@ function analyzeLogs(rawText) {
     events,
     findings,
     summary: {
-      totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
+      totalLines: nonEmptyLinesCount,
+      flaggedLines: flaggedLinesCount,
       uniqueIps
     }
   };
