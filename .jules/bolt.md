@@ -1,0 +1,3 @@
+## 2026-03-17 - Hoisting and Loop Optimization in Log Analysis
+**Learning:** Hoisting static regexes and pattern entries outside the main analysis function, and replacing functional array methods (forEach, filter) with standard for-loops, significantly improves performance when processing large log files. Avoiding object spreading and repeated Map lookups in hot loops further reduces execution time.
+**Action:** Always hoist static regexes and pre-calculate object entries when they are used in hot paths. Prefer standard for-loops over forEach for processing large datasets in performance-critical code.
