@@ -1,0 +1,3 @@
+## 2025-05-14 - [Hoisting and Loop Refactoring in Log Analysis]
+**Learning:** In high-throughput log processing, functional array methods like `.forEach()` and `Object.entries()` inside hot loops introduce significant overhead due to repeated function calls and intermediate array allocations. Additionally, re-creating Regex objects or re-calculating object entries inside the processing loop can be a major bottleneck.
+**Action:** Hoist static Regex objects and object entries (`Object.entries(PATTERNS)`) outside of the analysis function or loop. Use standard `for` loops instead of `.forEach()` or `.filter()` to minimize overhead. Track counters (like `flaggedLines`) during the main loop to avoid subsequent O(N) operations.
