@@ -1,0 +1,3 @@
+## 2026-05-23 - [Optimizing Log Analysis Performance]
+**Learning:** Hoisting static data (like `Object.entries(PATTERNS)`) and regexes outside of hot paths, combined with replacing functional array methods (`forEach`, `filter`) with standard `for` loops, significantly reduces overhead when processing large datasets (100k+ lines). Tracking metrics (like `flaggedLinesCount`) during the main iteration instead of a separate pass further improves efficiency.
+**Action:** Always prioritize standard `for` loops and hoist invariant calculations when dealing with performance-critical data processing loops.
