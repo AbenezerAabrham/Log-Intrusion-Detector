@@ -1,0 +1,3 @@
+## 2026-03-17 - Hoisting and Loop Optimization for Log Analysis
+**Learning:** Functional array methods like `.filter().forEach()` and repeated `Object.entries()` calls in a hot loop (like processing 100k+ log lines) introduce significant overhead. Hoisting static regexes and pre-calculating `Object.entries(PATTERNS)` outside the loop, combined with a single-pass standard `for` loop, can more than double the processing speed.
+**Action:** Always hoist static regexes and pre-calculate object entries when processing large datasets in a loop. Prefer standard `for` loops over functional methods in performance-critical paths.
