@@ -46,6 +46,11 @@ const PATTERNS = {
   }
 };
 
+// Hoisted for performance in hot paths
+const PATTERN_ENTRIES = Object.entries(PATTERNS);
+const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const statusRegex = /\s([2345]\d{2})\s/;
+
 /* --- SAMPLE LOGS --- */
 const SAMPLES = {
   brute: `192.168.1.100 - - [17/Mar/2026:10:00:01 +0000] "POST /login HTTP/1.1" 401 120 "-" "Mozilla/5.0"
@@ -89,12 +94,11 @@ function analyzeLogs(rawText) {
   const ipStats = {};
 
   let riskTotal = 0;
+  let flaggedLinesCount = 0;
 
-  // regex to roughly extract IP and HTTP Status from common access logs
-  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const statusRegex = /\s([2345]\d{2})\s/;
-
-  lines.forEach((line, index) => {
+  // Optimized loop replacing forEach
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     let lineType = 'safe'; // default
     let highestLineScore = 0;
     const flaggedReasons = [];
@@ -115,7 +119,11 @@ function analyzeLogs(rawText) {
     if (status >= 500) ipStats[ip][500]++;
 
     // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    for (let j = 0; j < PATTERN_ENTRIES.length; j++) {
+      const entry = PATTERN_ENTRIES[j];
+      const key = entry[0];
+      const rule = entry[1];
+
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
@@ -134,22 +142,25 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
+      flaggedLinesCount++;
       events.push({
-        lineNum: index + 1,
+        lineNum: i + 1,
         ip,
         content: line,
         severity: lineType,
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
   // Heuristics 2: IP Aggregation checks
-  Object.entries(ipStats).forEach(([ip, stats]) => {
+  const ipEntries = Object.entries(ipStats);
+  for (let i = 0; i < ipEntries.length; i++) {
+    const [ip, stats] = ipEntries[i];
     // Brute Force: 4+ Auth failures (401/403)
     const fails = stats[401] + stats[403];
     if (fails >= 4) {
@@ -190,7 +201,7 @@ function analyzeLogs(rawText) {
         reasons: 'Scanner Behavior'
       });
     }
-  });
+  }
 
   // Determine overall severity
   const score = Math.min(100, Math.round(riskTotal));
@@ -213,7 +224,7 @@ function analyzeLogs(rawText) {
     findings,
     summary: {
       totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
+      flaggedLines: flaggedLinesCount,
       uniqueIps
     }
   };
