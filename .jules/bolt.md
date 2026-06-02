@@ -1,0 +1,3 @@
+## 2025-05-15 - [Loop and Constant Optimization in analyzeLogs]
+**Learning:** Hoisting constants like regexes and pre-calculating `Object.entries(PATTERNS)` outside the hot path, along with replacing `forEach` with standard `for` loops, significantly reduces execution time in V8. Standard `for` loops allow for better JIT optimization and avoid the overhead of function calls in every iteration. Caching object property lookups inside loops also yields measurable wins.
+**Action:** Always check for high-frequency loops and look for opportunities to hoist calculations or replace functional array methods with standard loops in performance-critical paths.
