@@ -1,0 +1,3 @@
+## 2026-06-09 - [Optimizing Log Analysis Performance]
+**Learning:** Hoisting static regexes (IP_REGEX, STATUS_REGEX) and constant entries (PATTERN_ENTRIES) out of the main loop significantly reduces execution time by avoiding redundant object creation and calculation. Replacing functional methods like `.forEach` and `.filter` with standard `for` loops further improves performance by avoiding function call overhead and intermediate array allocations.
+**Action:** Always check for opportunities to hoist constants and replace functional array methods with imperative loops in performance-critical code paths.
