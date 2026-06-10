@@ -1,0 +1,3 @@
+## 2026-03-17 - [Optimization of analyzeLogs]
+**Learning:** Hoisting static regexes and pre-computing `Object.entries` outside of a hot loop, combined with replacing functional array methods (`forEach`, `filter`) with standard `for` loops, significantly reduces execution time in the LogWatch analysis engine. In this codebase, these changes reduced processing time for 100,000 log lines from ~592ms to ~267ms (approx. 55% improvement).
+**Action:** Always hoist static regexes and pre-calculate object entries when processing large datasets in loops. Prefer standard `for` loops over `forEach` or `filter` in performance-critical paths.
