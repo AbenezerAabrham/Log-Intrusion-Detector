@@ -1,0 +1,3 @@
+## 2026-06-25 - [Optimization of analyzeLogs in detector.js]
+**Learning:** Hoisting static regexes and constants outside of tight loops (like log line processing) significantly reduces overhead. Replacing `.forEach` with standard `for` loops and caching object lookups within loops provides a measurable speedup in JavaScript, especially when dealing with large arrays (100k+ elements).
+**Action:** Always check for repeated regex creation or object property lookups inside heavy processing loops and move them out where possible. Prefer `for` loops over functional iterators in performance-critical paths.
