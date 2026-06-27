@@ -1,0 +1,3 @@
+## 2026-06-25 - Hoisting and Loop Optimization in Log Analysis
+**Learning:** Hoisting static regexes (`IP_REGEX`, `STATUS_REGEX`) and `Object.entries(PATTERNS)` outside the `analyzeLogs` function or its main loop significantly reduces execution time by avoiding redundant object creation and recompilation. Replacing functional `forEach` and `filter` with standard `for` loops and `continue` statements further improves performance by reducing closure overhead and avoiding intermediate array allocations.
+**Action:** Always hoist static data and use standard loops in performance-critical paths involving large datasets.
