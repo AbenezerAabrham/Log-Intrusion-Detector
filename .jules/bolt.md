@@ -1,0 +1,3 @@
+## 2026-07-02 - [analyzeLogs Performance Optimization]
+**Learning:** In high-frequency loops (like processing hundreds of thousands of log lines), `Object.entries()` and `.filter()` create significant GC pressure and overhead. Hoisting static regexes and pattern entries outside the loop, and replacing functional array methods (`.forEach`, `.filter`) with standard `for` loops, can lead to dramatic performance gains (~46% speedup in this case).
+**Action:** Always identify and hoist static conversions or regex creations out of hot loops. Prefer manual iteration over intermediate array-creating methods for large-scale data processing.
