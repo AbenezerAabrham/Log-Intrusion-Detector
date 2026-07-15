@@ -83,19 +83,27 @@ function analyzeLogs(rawText) {
     return { valid: false, error: 'Log input is empty. Please paste logs first.' };
   }
 
-  const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+  // Bolt: Hoist regexes and pattern entries to avoid redundant operations in the loop
+  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+  const statusRegex = /\s([2345]\d{2})\s/;
+  const PATTERN_ENTRIES = Object.entries(PATTERNS);
+
+  const lines = rawText.split('\n');
   const events = [];
   const findingsMap = new Map();
   const ipStats = {};
 
   let riskTotal = 0;
+  let totalLinesCount = 0;
+  let flaggedLinesCount = 0;
 
-  // regex to roughly extract IP and HTTP Status from common access logs
-  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const statusRegex = /\s([2345]\d{2})\s/;
+  // Bolt: Use standard for loop for better performance over forEach/filter
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
 
-  lines.forEach((line, index) => {
-    let lineType = 'safe'; // default
+    totalLinesCount++;
+    let lineType = 'safe';
     let highestLineScore = 0;
     const flaggedReasons = [];
     
@@ -105,26 +113,34 @@ function analyzeLogs(rawText) {
     const statusMatch = line.match(statusRegex);
     const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
-    if (!ipStats[ip]) {
-      ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
+    // Bolt: Cache ipStats lookup
+    let stats = ipStats[ip];
+    if (!stats) {
+      stats = ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
     }
-    ipStats[ip].count++;
-    if (status === 401) ipStats[ip][401]++;
-    if (status === 403) ipStats[ip][403]++;
-    if (status === 404) ipStats[ip][404]++;
-    if (status >= 500) ipStats[ip][500]++;
+    stats.count++;
+    if (status === 401) stats[401]++;
+    else if (status === 403) stats[403]++;
+    else if (status === 404) stats[404]++;
+    else if (status >= 500) stats[500]++;
 
     // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    for (let j = 0; j < PATTERN_ENTRIES.length; j++) {
+      const entry = PATTERN_ENTRIES[j];
+      const key = entry[0];
+      const rule = entry[1];
+
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
         // Ensure finding appears only once in summary
-        if (!findingsMap.has(key)) {
-          findingsMap.set(key, { ...rule, occurrence: 1 });
+        let finding = findingsMap.get(key);
+        if (!finding) {
+          finding = { ...rule, occurrence: 1 };
+          findingsMap.set(key, finding);
           riskTotal += rule.score; // only add score once per pattern type for overall log
         } else {
-          findingsMap.get(key).occurrence++;
+          finding.occurrence++;
         }
 
         // track severity
@@ -134,27 +150,31 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
+      flaggedLinesCount++;
       events.push({
-        lineNum: index + 1,
+        lineNum: totalLinesCount, // Maintain sequential numbering of non-empty lines
         ip,
         content: line,
         severity: lineType,
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
   // Heuristics 2: IP Aggregation checks
-  Object.entries(ipStats).forEach(([ip, stats]) => {
+  const ipStatsEntries = Object.entries(ipStats);
+  for (let i = 0; i < ipStatsEntries.length; i++) {
+    const [ip, stats] = ipStatsEntries[i];
     // Brute Force: 4+ Auth failures (401/403)
     const fails = stats[401] + stats[403];
     if (fails >= 4) {
-      if (!findingsMap.has('brute_' + ip)) {
-        findingsMap.set('brute_' + ip, {
+      const bruteKey = 'brute_' + ip;
+      if (!findingsMap.has(bruteKey)) {
+        findingsMap.set(bruteKey, {
           name: 'Authentication Brute Force',
           type: 'critical',
           score: 50,
@@ -173,8 +193,9 @@ function analyzeLogs(rawText) {
 
     // Port Scan / Dir Busting: 6+ 404s
     if (stats[404] >= 6) {
-      if (!findingsMap.has('scan_' + ip)) {
-        findingsMap.set('scan_' + ip, {
+      const scanKey = 'scan_' + ip;
+      if (!findingsMap.has(scanKey)) {
+        findingsMap.set(scanKey, {
           name: 'Directory Busting / Scanning',
           type: 'high',
           score: 30,
@@ -190,7 +211,7 @@ function analyzeLogs(rawText) {
         reasons: 'Scanner Behavior'
       });
     }
-  });
+  }
 
   // Determine overall severity
   const score = Math.min(100, Math.round(riskTotal));
@@ -212,8 +233,8 @@ function analyzeLogs(rawText) {
     events,
     findings,
     summary: {
-      totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
+      totalLines: totalLinesCount,
+      flaggedLines: flaggedLinesCount,
       uniqueIps
     }
   };
