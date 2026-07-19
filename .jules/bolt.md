@@ -1,0 +1,5 @@
+# Bolt's Journal - Log Intrusion Detector Performance Optimization
+
+## 2026-07-19 - Hoisting Regexes, Flattening PATTERNS, and Index-Based Loops
+**Learning:** In V8/Node.js, calling `Object.entries()` inside high-frequency loops (like per-line log parsing) causes major GC churn and overhead. Similarly, creating/compiling regexes like `ipRegex` and `statusRegex` on every function call or loop iteration slows down processing significantly. Standard index-based `for` loops are much faster than `.forEach()` arrays. Furthermore, lazy-initializing array allocations (`flaggedReasons`) only when matching a pattern prevents millions of empty arrays from being created for clean logs, boosting performance further.
+**Action:** Always map map/object patterns (such as `PATTERNS`) to a flat array (`PATTERN_ENTRIES`) and hoist regular expressions outside function bodies. Replace array iterators inside performance-critical paths with classic `for` loops, cache nested lookups (like `ipStats[ip]`), and use lazy array instantiation.
