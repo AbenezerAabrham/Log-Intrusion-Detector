@@ -78,53 +78,86 @@ const SAMPLES = {
 
 // --- CORE ANALYSIS ENGINE ---
 
+// Hoisted regular expressions to avoid recompilation and allocation overhead inside high-frequency loops
+const IP_REGEX = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const STATUS_REGEX = /\s([2345]\d{2})\s/;
+
+// Pre-build dynamic PATTERNS entries flat array to avoid Object.entries() calls on every line parse
+const PATTERN_ENTRIES = [];
+for (const key in PATTERNS) {
+  if (Object.prototype.hasOwnProperty.call(PATTERNS, key)) {
+    PATTERN_ENTRIES.push({ key, rule: PATTERNS[key] });
+  }
+}
+
 function analyzeLogs(rawText) {
   if (!rawText.trim()) {
     return { valid: false, error: 'Log input is empty. Please paste logs first.' };
   }
 
-  const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+  // Pre-split lines and process them to avoid expensive intermediate .filter() allocations
+  const rawLines = rawText.split('\n');
+  const rawLinesCount = rawLines.length;
+  const lines = [];
+  for (let i = 0; i < rawLinesCount; i++) {
+    const line = rawLines[i];
+    if (line.trim().length > 0) {
+      lines.push(line);
+    }
+  }
+
   const events = [];
   const findingsMap = new Map();
   const ipStats = {};
 
   let riskTotal = 0;
+  let uniqueIps = 0;
+  let flaggedLinesCount = 0;
 
-  // regex to roughly extract IP and HTTP Status from common access logs
-  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const statusRegex = /\s([2345]\d{2})\s/;
+  const totalLines = lines.length;
+  const numPatterns = PATTERN_ENTRIES.length;
 
-  lines.forEach((line, index) => {
+  for (let index = 0; index < totalLines; index++) {
+    const line = lines[index];
     let lineType = 'safe'; // default
     let highestLineScore = 0;
-    const flaggedReasons = [];
+    let flaggedReasons = null; // Lazy-initialize to avoid massive GC allocation pressure for clean logs
     
     // basic extraction
-    const ipMatch = line.match(ipRegex);
+    const ipMatch = line.match(IP_REGEX);
     const ip = ipMatch ? ipMatch[0] : 'unknown';
-    const statusMatch = line.match(statusRegex);
-    const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
+    const statusMatch = line.match(STATUS_REGEX);
+    const status = statusMatch ? +statusMatch[1] : null;
 
-    if (!ipStats[ip]) {
-      ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
+    let stats = ipStats[ip];
+    if (!stats) {
+      stats = ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
+      uniqueIps++;
     }
-    ipStats[ip].count++;
-    if (status === 401) ipStats[ip][401]++;
-    if (status === 403) ipStats[ip][403]++;
-    if (status === 404) ipStats[ip][404]++;
-    if (status >= 500) ipStats[ip][500]++;
+    stats.count++;
+    if (status === 401) stats[401]++;
+    else if (status === 403) stats[403]++;
+    else if (status === 404) stats[404]++;
+    else if (status >= 500) stats[500]++;
 
-    // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc) using fast index loop
+    for (let p = 0; p < numPatterns; p++) {
+      const entry = PATTERN_ENTRIES[p];
+      const key = entry.key;
+      const rule = entry.rule;
       if (rule.regex.test(line)) {
+        if (!flaggedReasons) {
+          flaggedReasons = [];
+        }
         flaggedReasons.push(rule.name);
         
         // Ensure finding appears only once in summary
-        if (!findingsMap.has(key)) {
+        const finding = findingsMap.get(key);
+        if (!finding) {
           findingsMap.set(key, { ...rule, occurrence: 1 });
           riskTotal += rule.score; // only add score once per pattern type for overall log
         } else {
-          findingsMap.get(key).occurrence++;
+          finding.occurrence++;
         }
 
         // track severity
@@ -134,10 +167,10 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
-    if (flaggedReasons.length > 0) {
+    if (flaggedReasons && flaggedReasons.length > 0) {
       events.push({
         lineNum: index + 1,
         ip,
@@ -145,52 +178,56 @@ function analyzeLogs(rawText) {
         severity: lineType,
         reasons: flaggedReasons.join(', ')
       });
+      flaggedLinesCount++;
     }
-  });
+  }
 
-  // Heuristics 2: IP Aggregation checks
-  Object.entries(ipStats).forEach(([ip, stats]) => {
-    // Brute Force: 4+ Auth failures (401/403)
-    const fails = stats[401] + stats[403];
-    if (fails >= 4) {
-      if (!findingsMap.has('brute_' + ip)) {
-        findingsMap.set('brute_' + ip, {
-          name: 'Authentication Brute Force',
-          type: 'critical',
-          score: 50,
-          desc: `Multiple authentication failures (${fails}) from a single IP address (${ip}).`
+  // Heuristics 2: IP Aggregation checks using fast for...in loop
+  for (const ip in ipStats) {
+    if (Object.prototype.hasOwnProperty.call(ipStats, ip)) {
+      const stats = ipStats[ip];
+      // Brute Force: 4+ Auth failures (401/403)
+      const fails = stats[401] + stats[403];
+      if (fails >= 4) {
+        if (!findingsMap.has('brute_' + ip)) {
+          findingsMap.set('brute_' + ip, {
+            name: 'Authentication Brute Force',
+            type: 'critical',
+            score: 50,
+            desc: `Multiple authentication failures (${fails}) from a single IP address (${ip}).`
+          });
+          riskTotal += 50;
+        }
+        events.push({
+          lineNum: 'Agg',
+          ip,
+          content: `${fails} authentication failures (401/403) aggregated for ${ip}`,
+          severity: 'critical',
+          reasons: 'Brute Force'
         });
-        riskTotal += 50;
       }
-      events.push({
-        lineNum: 'Agg',
-        ip,
-        content: `${fails} authentication failures (401/403) aggregated for ${ip}`,
-        severity: 'critical',
-        reasons: 'Brute Force'
-      });
-    }
 
-    // Port Scan / Dir Busting: 6+ 404s
-    if (stats[404] >= 6) {
-      if (!findingsMap.has('scan_' + ip)) {
-        findingsMap.set('scan_' + ip, {
-          name: 'Directory Busting / Scanning',
-          type: 'high',
-          score: 30,
-          desc: `Anomalous volume of 404 Not Found errors (${stats[404]}) from a single IP (${ip}). Indicates blind scanning for endpoints.`
+      // Port Scan / Dir Busting: 6+ 404s
+      if (stats[404] >= 6) {
+        if (!findingsMap.has('scan_' + ip)) {
+          findingsMap.set('scan_' + ip, {
+            name: 'Directory Busting / Scanning',
+            type: 'high',
+            score: 30,
+            desc: `Anomalous volume of 404 Not Found errors (${stats[404]}) from a single IP (${ip}). Indicates blind scanning for endpoints.`
+          });
+          riskTotal += 30;
+        }
+        events.push({
+          lineNum: 'Agg',
+          ip,
+          content: `${stats[404]} 404 Not Found errors aggregated for ${ip}`,
+          severity: 'high',
+          reasons: 'Scanner Behavior'
         });
-        riskTotal += 30;
       }
-      events.push({
-        lineNum: 'Agg',
-        ip,
-        content: `${stats[404]} 404 Not Found errors aggregated for ${ip}`,
-        severity: 'high',
-        reasons: 'Scanner Behavior'
-      });
     }
-  });
+  }
 
   // Determine overall severity
   const score = Math.min(100, Math.round(riskTotal));
@@ -203,7 +240,6 @@ function analyzeLogs(rawText) {
 
   // Format final returns
   const findings = Array.from(findingsMap.values());
-  const uniqueIps = Object.keys(ipStats).length;
 
   return {
     valid: true,
@@ -212,9 +248,9 @@ function analyzeLogs(rawText) {
     events,
     findings,
     summary: {
-      totalLines: lines.length,
-      flaggedLines: events.filter(e => e.lineNum !== 'Agg').length,
-      uniqueIps
+      totalLines: totalLines,
+      flaggedLines: flaggedLinesCount,
+      uniqueIps: uniqueIps
     }
   };
 }
