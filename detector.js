@@ -78,6 +78,11 @@ const SAMPLES = {
 
 // --- CORE ANALYSIS ENGINE ---
 
+// Hoisted static regular expressions and patterns entries for optimal performance.
+const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+const statusRegex = /\s([2345]\d{2})\s/;
+const PATTERN_ENTRIES = Object.entries(PATTERNS);
+
 function analyzeLogs(rawText) {
   if (!rawText.trim()) {
     return { valid: false, error: 'Log input is empty. Please paste logs first.' };
@@ -90,11 +95,9 @@ function analyzeLogs(rawText) {
 
   let riskTotal = 0;
 
-  // regex to roughly extract IP and HTTP Status from common access logs
-  const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const statusRegex = /\s([2345]\d{2})\s/;
-
-  lines.forEach((line, index) => {
+  // Optimized line parsing loop using an index-based standard sequential loop
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
     let lineType = 'safe'; // default
     let highestLineScore = 0;
     const flaggedReasons = [];
@@ -105,17 +108,20 @@ function analyzeLogs(rawText) {
     const statusMatch = line.match(statusRegex);
     const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
-    if (!ipStats[ip]) {
-      ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
+    // Cache the stats object for the IP address to avoid nested key lookup overhead
+    let stats = ipStats[ip];
+    if (!stats) {
+      stats = ipStats[ip] = { count: 0, 401: 0, 403: 0, 404: 0, 500: 0 };
     }
-    ipStats[ip].count++;
-    if (status === 401) ipStats[ip][401]++;
-    if (status === 403) ipStats[ip][403]++;
-    if (status === 404) ipStats[ip][404]++;
-    if (status >= 500) ipStats[ip][500]++;
+    stats.count++;
+    if (status === 401) stats[401]++;
+    else if (status === 403) stats[403]++;
+    else if (status === 404) stats[404]++;
+    else if (status >= 500) stats[500]++;
 
-    // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc)
-    Object.entries(PATTERNS).forEach(([key, rule]) => {
+    // Regex Check 1: Iterating over defined patterns (SQLi, XSS, Path traversal, etc) using a standard sequential loop
+    for (let i = 0; i < PATTERN_ENTRIES.length; i++) {
+      const [key, rule] = PATTERN_ENTRIES[i];
       if (rule.regex.test(line)) {
         flaggedReasons.push(rule.name);
         
@@ -134,7 +140,7 @@ function analyzeLogs(rawText) {
           lineType = rule.type;
         }
       }
-    });
+    }
 
     // Save event if flagged
     if (flaggedReasons.length > 0) {
@@ -146,10 +152,12 @@ function analyzeLogs(rawText) {
         reasons: flaggedReasons.join(', ')
       });
     }
-  });
+  }
 
-  // Heuristics 2: IP Aggregation checks
-  Object.entries(ipStats).forEach(([ip, stats]) => {
+  // Heuristics 2: IP Aggregation checks using standard sequential loop over Object.entries
+  const ipStatsEntries = Object.entries(ipStats);
+  for (let i = 0; i < ipStatsEntries.length; i++) {
+    const [ip, stats] = ipStatsEntries[i];
     // Brute Force: 4+ Auth failures (401/403)
     const fails = stats[401] + stats[403];
     if (fails >= 4) {
@@ -190,7 +198,7 @@ function analyzeLogs(rawText) {
         reasons: 'Scanner Behavior'
       });
     }
-  });
+  }
 
   // Determine overall severity
   const score = Math.min(100, Math.round(riskTotal));
