@@ -1,0 +1,3 @@
+## 2026-09-01 - Optimizing Log Parsing in LogWatch Heuristic Detector
+**Learning:** In hot loops processing large text inputs (100k+ lines), dynamic RegExp creation, intermediate array filtering (`split('\n').filter()`), `forEach` callbacks, and un-lazy object/array allocations introduce massive GC pressure and CPU overhead. Hoisting static regular expressions, pre-flattening pattern entries, using single-pass index-based `for` loops with lazy allocations, and inline metric tracking dramatically speeds up log analysis.
+**Action:** Always hoist static regexes and dictionary entries, replace high-frequency array iterations with index-based `for` loops, and lazy-initialize per-line arrays when parsing large text payloads in client-side JS.
